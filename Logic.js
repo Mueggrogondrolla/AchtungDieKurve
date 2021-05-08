@@ -13,6 +13,8 @@ window.onload = function ()
 
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
+
+	StartGame();
 };
 
 function GameUpdateLoop()
@@ -25,10 +27,17 @@ function GameUpdateLoop()
 		{
 			if (!player.IsDead)
 			{
-				player.Update(Math.min(0.016, 1000 / game.LastFrameTime));
+				player.Update(Math.min(0.016, game.LastFrameTime / 1000));
 				game.IsPlayerDed(player, game.players);
 			}
 		});
+
+		game.powerUpTimeout -= game.LastFrameTime;
+		if (game.powerUpTimeout < 0)
+		{
+			game.SpawnPowerup();
+			game.powerUpTimeout = Math.random() * 100 + 5000;
+		}
 	}
 
 	setTimeout(GameUpdateLoop, 0);
@@ -36,13 +45,14 @@ function GameUpdateLoop()
 
 function GameRenderLoop()
 {
+	game.clearCanvas();
+
 	if (game.ShowFrameRate)
 	{
 		if (game.LastFrameTime !== 0)
 		{
 			let FrameRate = Math.round(1000 / game.LastFrameTime);
 
-			game.clearCanvas();
 			let textDimensions = game.context.measureText(FrameRate);
 
 			game.context.fillStyle = "#1d881c";
@@ -51,6 +61,7 @@ function GameRenderLoop()
 	}
 
 	game.players.forEach(player => game.drawTrail(player));
+	game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
 
 	//document.getElementById("debugLabel").innerText = game.players[1].untrackedTrailLength;
 
@@ -66,9 +77,10 @@ class Game
 {
 	// Constants
 	static BaseLineWidth = 4;
-	static BaseSpeed = 64;
-	static BaseTurnSpeed = 1;
-	static TrailStepSize = 10;
+	static BaseSpeed = 128;
+	static BaseTurnSpeed = 2;
+	static TrailStepSize = 5;
+	static PowerUpSize = 16;
 
 	static PlayerNames = [
 		"Franz",
@@ -93,6 +105,9 @@ class Game
 
 		this.players = [];
 
+		this.powerUps = [];
+		this.powerUpTimeout = 5000;
+
 		this.canvas = canvas;
 		this.context = canvas.getContext("2d");
 		this.SetupCanvasContext(canvas);
@@ -103,11 +118,7 @@ class Game
 		if (game.IsRunning)
 		{ return; }
 
-		this.players.forEach(player =>
-		{
-			player.position = new Point(Math.random() * this.canvas.width, Math.random() * this.canvas.height); // TODO: Add logic to not spawn players into one another
-			player.CreateInitialTrail();
-		});
+		this.StartRound();
 
 		setTimeout(GameUpdateLoop, 0);
 		window.requestAnimationFrame(GameRenderLoop);
@@ -128,21 +139,54 @@ class Game
 		if (player.position.x < player.size || player.position.x + player.size > this.canvas.width ||
 			player.position.y < player.size || player.position.y + player.size > this.canvas.height)
 		{
-			player.Kill();
+			this.KillPlayer(player);
 			return;
 		}
 		AllPlayers.forEach(otherPlayer =>
 		{
-			if (player.IntersectsWithOtherPlayer(otherPlayer)) // TODO: fix
+			if (player.IntersectsWithOtherPlayer(otherPlayer))
 			{
-				player.Kill();
+				this.KillPlayer(player);
 			}
 		});
 	}
 
-	QuitGame()
+	KillPlayer(player)
 	{
-		this.Quit = true;
+		player.Kill();
+
+		if (this.OnlyOnePlayerLeft())
+		{ this.EndRound(); }
+	}
+
+	OnlyOnePlayerLeft()
+	{
+		let firstAlivePlayerFound = false;
+
+		for (let player of this.players)
+		{
+			if (!player.IsDead)
+			{
+				if (firstAlivePlayerFound)
+				{ return false; }
+				firstAlivePlayerFound = true;
+			}
+		}
+
+		return firstAlivePlayerFound;
+	}
+
+	GetFirstLivingPlayer()
+	{
+		for (let player of this.players)
+		{
+			if (!player.IsDead)
+			{
+				return player;
+			}
+		}
+
+		return undefined;
 	}
 
 
@@ -170,21 +214,40 @@ class Game
 	drawTrail(player)
 	{
 		this.context.strokeStyle = player.color;
-		this.context.lineWidth = 4;
 
 		this.context.beginPath();
-		this.context.moveTo(player.trail[0].x, player.trail[0].y);
+		let lastSize = player.trail[0].size;
 
-		for (let i = 1; i < player.trail.length; i++)
+		for (let i = 0; i < player.trail.length; i++)
 		{
-			this.context.lineTo(player.trail[i].x, player.trail[i].y);
+			if (lastSize !== player.trail[i].size)
+			{
+				this.context.stroke();
+				lastSize = player.trail[i].size;
+			}
+			this.context.lineWidth = player.trail[i].size;
+			this.context.moveTo(player.trail[i].startPoint.x, player.trail[i].startPoint.y);
+			this.context.lineTo(player.trail[i].endPoint.x, player.trail[i].endPoint.y);
 		}
-		this.context.lineTo(player.position.x, player.position.y);
-
+		if (player.currentTrailSegment)
+		{
+			this.context.lineWidth = player.currentTrailSegment.size;
+			this.context.moveTo(player.currentTrailSegment.startPoint.x, player.currentTrailSegment.startPoint.y);
+			this.context.lineTo(player.position.x, player.position.y);
+		}
 		this.context.stroke();
+
 		this.context.beginPath();
-		this.context.fillStyle = player.color;
+		this.context.fillStyle = '#FFFFFF';
 		this.context.arc(player.position.x, player.position.y, player.size / 2, 0, 2 * Math.PI);
+		this.context.fill();
+	}
+
+	DrawPowerup(powerUp)
+	{
+		this.context.beginPath();
+		this.context.fillStyle = this.GetPowerUpSprite(powerUp);
+		this.context.arc(powerUp.position.x, powerUp.position.y, Game.PowerUpSize, 0, 2 * Math.PI);
 		this.context.fill();
 	}
 
@@ -227,6 +290,107 @@ class Game
 	{
 		this.players.push(player);
 	}
+
+	StartRound()
+	{
+		this.ClearBoard();
+
+		this.players.forEach(player =>
+		{
+			let playerTooCloseToOtherPlayer;
+
+			do
+			{
+				playerTooCloseToOtherPlayer = false;
+
+				player.position = new Point(Math.random() * this.canvas.width, Math.random() * this.canvas.height);
+
+				this.players.forEach(otherPlayer =>
+				{
+					if (otherPlayer !== player && Point.Subtract(otherPlayer.position, player.position).Length() < 100)
+					{
+						playerTooCloseToOtherPlayer = true;
+					}
+				});
+			}
+			while (player.position.x < canvas.width * 0.2 || player.position.x > canvas.width * 0.8 ||
+			player.position.y < canvas.height * 0.2 || player.position.y > canvas.height * 0.8 || playerTooCloseToOtherPlayer);
+
+			player.CreateInitialTrail();
+		});
+	}
+
+	EndRound()
+	{
+		this.IsRunning = false;
+		console.log(this.GetFirstLivingPlayer().name, "won");
+
+		// TODO: display win message
+
+		setTimeout(this.StartRound, 5000); // probably wont work
+	}
+
+	ClearBoard()
+	{
+		//this.players.forEach(player => player.ClearTrail());
+
+		// TODO: clear powerups
+	}
+
+	SpawnPowerup()
+	{
+		this.powerUps.push({
+			position: {x: Math.random() * canvas.width * 0.8 + canvas.width * 0.1, y: Math.random() * canvas.height * 0.8 + canvas.height * 0.1},
+			//type: Math.floor(Math.random() * 13),
+			type: PowerUpTypes.Invincible,
+			duration: 5000
+		});
+	}
+
+	GetPowerUpSprite(powerUp)
+	{
+		if (powerUp.type === PowerUpTypes.Invincible)
+		{ return "#FF0000"; }
+		if (powerUp.type === PowerUpTypes.Fast)
+		{ return "#FF00FF"; }
+		if (powerUp.type === PowerUpTypes.AllFast)
+		{ return "#FFFF00"; }
+		if (powerUp.type === PowerUpTypes.Slow)
+		{ return "#00FFFF"; }
+		if (powerUp.type === PowerUpTypes.AllSlow)
+		{ return "#AAAAAA"; }
+		if (powerUp.type === PowerUpTypes.Thick)
+		{ return "#FFFFFF"; }
+		if (powerUp.type === PowerUpTypes.AllThick)
+		{ return "#AAA000"; }
+		if (powerUp.type === PowerUpTypes.Thin)
+		{ return "#000AAA"; }
+		if (powerUp.type === PowerUpTypes.AllThin)
+		{ return "#123456"; }
+		if (powerUp.type === PowerUpTypes.ClearScreen)
+		{ return "#789ABC"; }
+		if (powerUp.type === PowerUpTypes.TeleportWalls)
+		{ return "#DEF012"; }
+		if (powerUp.type === PowerUpTypes.SharpTurn)
+		{ return "#0F1E2D"; }
+		if (powerUp.type === PowerUpTypes.FastPowerUpSpawn)
+		{ return "#F0E1D2"; }
+	}
+
+	PickupPowerUp(position)
+	{
+		for (let i = 0; i < this.powerUps.length; i++)
+		{
+			if (Point.Subtract(position, this.powerUps[i].position).LengthSquared() < Game.PowerUpSize * Game.PowerUpSize)
+			{
+				let pickedUpPowerUp = this.powerUps[i];
+				this.powerUps.splice(i, 1);
+				return pickedUpPowerUp;
+			}
+		}
+
+		return undefined;
+	}
 }
 
 class Player
@@ -241,24 +405,38 @@ class Player
 		this.movingLeft = false;
 
 		this.untrackedTrailLength = 0;
+		this.currentTrailSegment = undefined;
 
 		this.IsDead = false;
 		this.name = name;
+
+		this.activePowerUps = [];
+
+		this.dashTimeout = 5;
 
 		this.position = new Point(0, 0);
 		this.direction = new Point(1, 0);
 		this.direction.Rotate(Math.random() * 360);
 		this.direction.Normalize();
+
+		this.ClearTrail();
 	}
 
 	CreateInitialTrail()
 	{
-		this.trail = [Point.Subtract(this.position, this.direction.Multiply(Game.BaseSpeed))];
+		this.AddTrailSegment(Point.Subtract(this.position, this.direction.Multiply(Game.BaseSpeed)), this.size);
 	}
 
 	Update(deltaTime)
 	{
-		// TODO: add logic to update player effects
+		this.dashTimeout -= deltaTime;
+		if (this.dashTimeout < 0)
+		{
+			this.AddPowerUp(new PowerUp(PowerUpTypes.Invincible, 150));
+			this.dashTimeout = Math.random() * 0.1 + 5;
+		}
+
+		this.UpdatePowerUps();
 
 		if (this.IsDead)
 		{ return; }
@@ -271,26 +449,27 @@ class Player
 		let lastPosition = {x: this.position.x, y: this.position.y};
 
 		this.position.Add(this.direction.Multiply(deltaTime * this.speed));
+		this.AddPowerUp(game.PickupPowerUp(this.position));
 
 		let difference = {x: this.position.x - lastPosition.x, y: this.position.y - lastPosition.y};
 
 		this.untrackedTrailLength += difference.x * difference.x + difference.y * difference.y;
 
-		if (this.untrackedTrailLength > Game.TrailStepSize)
+		if (this.currentTrailSegment && this.untrackedTrailLength > Game.TrailStepSize)
 		{
-			this.trail.push({x: this.position.x, y: this.position.y});
+			this.AddTrailSegment(this.currentTrailSegment.startPoint, this.size);
 			this.untrackedTrailLength = 0;
 		}
 	}
 
 	get size()
 	{
-		return Game.BaseLineWidth;
+		return Game.BaseLineWidth * (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Thick)) / (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Thin));
 	}
 
 	get speed()
 	{
-		return Game.BaseSpeed;
+		return Game.BaseSpeed * (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Fast)) / (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Slow));
 	}
 
 	Kill()
@@ -301,15 +480,136 @@ class Player
 
 	IntersectsWithOtherPlayer(otherPlayer)
 	{
-		if (this === otherPlayer)
+		if (!this.currentTrailSegment)
 		{ return false; }
 
-		for (let i = 1; i < otherPlayer.trail.length; i++)
+		let iterationTarget = this === otherPlayer ? otherPlayer.trail.length - 2 : otherPlayer.trail.length;
+
+		// TODO: check not only for intersections, but also for being closer to another line than lineWidth (as that would also cross the other line visually)
+		for (let i = 0; i < iterationTarget; i++)
 		{
-			if (Utilities.DoLineSegmentsIntersect(otherPlayer.trail[i - 1], otherPlayer.trail[i], this.trail[this.trail.length - 1], this.position))
+			if (Utilities.DoLineSegmentsIntersect(otherPlayer.trail[i].startPoint, otherPlayer.trail[i].endPoint, this.currentTrailSegment.startPoint, this.position))
 			{ return true; }
 		}
-		return Utilities.DoLineSegmentsIntersect(otherPlayer.trail[otherPlayer.trail.length - 1], otherPlayer.position, this.trail[this.trail.length - 1], this.position);
+		return this === otherPlayer || !otherPlayer.currentTrailSegment ?
+			false :
+			Utilities.DoLineSegmentsIntersect(otherPlayer.currentTrailSegment.startPoint, otherPlayer.position, this.currentTrailSegment.startPoint, this.position);
+	}
+
+	AddTrailSegment(startPoint, size)
+	{
+		this.trail.push({startPoint: startPoint, endPoint: {x: this.position.x, y: this.position.y}, size: size});
+		this.currentTrailSegment = {startPoint: {x: this.position.x, y: this.position.y}, endPoint: undefined, size: this.size};
+	}
+
+	ClearTrail()
+	{
+		this.trail = [];
+	}
+
+	UpdatePowerUps()
+	{
+		for (let i = 0; i < this.activePowerUps.length; i++)
+		{
+			if (Date.now() - this.activePowerUps[i].startTime > this.activePowerUps[i].duration)
+			{
+				this.RemovePowerUp(this.activePowerUps[i]);
+				i--;
+			}
+		}
+	}
+
+	AddPowerUp(powerUp)
+	{
+		if (!powerUp)
+		{ return; }
+
+
+		// if it is an active effect on the player, push it on the power up stack
+		if (powerUp.type === PowerUpTypes.Thin ||
+			powerUp.type === PowerUpTypes.Thick ||
+			powerUp.type === PowerUpTypes.Slow ||
+			powerUp.type === PowerUpTypes.Fast ||
+			powerUp.type === PowerUpTypes.Invincible)
+		{
+			powerUp.startTime = Date.now();
+			this.activePowerUps.push(powerUp);
+		}
+
+
+		if (powerUp.type === PowerUpTypes.Invincible && this.currentTrailSegment)
+		{
+			this.AddTrailSegment(this.currentTrailSegment.startPoint, this.size);
+			this.currentTrailSegment = undefined;
+		}
+		else if (powerUp.type === PowerUpTypes.AllFast)
+		{
+			game.players.forEach(player =>
+			{
+				if (player !== this)
+				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Fast, powerUp.duration)); }
+			});
+		}
+		else if (powerUp.type === PowerUpTypes.AllSlow)
+		{
+			game.players.forEach(player =>
+			{
+				if (player !== this)
+				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Slow, powerUp.duration)); }
+			});
+		}
+		else if (powerUp.type === PowerUpTypes.AllThick)
+		{
+			game.players.forEach(player =>
+			{
+				if (player !== this)
+				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Thick, powerUp.duration)); }
+			});
+		}
+		else if (powerUp.type === PowerUpTypes.AllThin)
+		{
+			game.players.forEach(player =>
+			{
+				if (player !== this)
+				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Thin, powerUp.duration)); }
+			});
+		}
+		else if ((powerUp.type === PowerUpTypes.Thick || powerUp.type === PowerUpTypes.Thin) && this.currentTrailSegment)
+		{
+			this.AddTrailSegment(this.currentTrailSegment.startPoint, this.currentTrailSegment.size);
+		}
+		else if (powerUp.type === PowerUpTypes.ClearScreen)
+		{
+			game.ClearBoard();
+		}
+	}
+
+	RemovePowerUp(powerUp)
+	{
+		this.activePowerUps.splice(this.activePowerUps.indexOf(powerUp), 1);
+
+		if (powerUp.type === PowerUpTypes.Invincible)
+		{
+			this.currentTrailSegment = new TrailSegment({x: this.position.x, y: this.position.y}, undefined, this.size);
+			this.untrackedTrailLength = 0;
+		}
+		else if ((powerUp.type === PowerUpTypes.Thick || powerUp.type === PowerUpTypes.Thin) && this.currentTrailSegment)
+		{
+			this.AddTrailSegment(this.currentTrailSegment.startPoint, this.currentTrailSegment.size);
+		}
+	}
+
+	PowerUpsOfTypeCount(powerUpType)
+	{
+		let count = 0;
+
+		for (let i = 0; i < this.activePowerUps.length; i++)
+		{
+			if (this.activePowerUps[i].type === powerUpType)
+			{ count++; }
+		}
+
+		return count;
 	}
 }
 
@@ -365,6 +665,45 @@ class Point
 		return this.x * this.x + this.y * this.y;
 	}
 }
+
+class TrailSegment
+{
+	constructor(startPoint, endPoint, size)
+	{
+		this.startPoint = startPoint;
+		this.endPoint = endPoint;
+		this.size = size;
+	}
+}
+
+const PowerUpTypes = Object.freeze(
+	{
+		"Invincible": 1,
+		"Fast": 2,
+		"AllFast": 3,
+		"Slow": 4,
+		"AllSlow": 5,
+		"Thick": 6,
+		"AllThick": 7,
+		"Thin": 8,
+		"AllThin": 9,
+		"ClearScreen": 10,
+		"TeleportWalls": 11,
+		"SharpTurn": 12,
+		"FastPowerUpSpawn": 13
+	}
+);
+
+class PowerUp
+{
+	constructor(type, duration)
+	{
+		this.duration = duration;
+		this.startTime = Date.now();
+		this.type = type; // TODO: make some sophisticated system
+	}
+}
+
 
 class Utilities
 {
