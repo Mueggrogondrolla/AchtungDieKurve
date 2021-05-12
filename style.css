@@ -1,8 +1,46 @@
 
+body {
+    font-family: 'Press Start 2P', cursive;
+}
+
+.Flex {
+    display: flex;
+}
+
 #Canvas {
     width: 80%;
     height: 800px;
-    display: flex;
     margin: auto;
     background: black;
+}
+
+.GameContent {
+    flex-direction: row;
+}
+
+#Scoreboard {
+    width: 15%;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    transition: 500ms ease;
+}
+
+.PowerUpListItem,
+.SinglePlayerScore {
+    margin-bottom: 1rem;
+    transition: 500ms ease;
+}
+
+.PlayerScoreTextContent {
+    margin: auto 1rem;
+}
+
+#PowerUpList {
+    flex-direction: column;
+}
+
+.PowerUpListItem,
+.PowerUpItemDescription {
+    margin-left: 1rem;
+    align-items: center;
 }

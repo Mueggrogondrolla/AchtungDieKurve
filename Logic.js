@@ -14,6 +14,8 @@ window.onload = function ()
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
 
+	Utilities.CreateImageElements();
+
 	StartGame();
 };
 
@@ -32,11 +34,11 @@ function GameUpdateLoop()
 			}
 		});
 
-		game.powerUpTimeout -= game.LastFrameTime;
-		if (game.powerUpTimeout < 0)
+		game.powerUpTimeout += game.LastFrameTime;
+		if (game.powerUpTimeout > game.powerUpSpawnRate)
 		{
 			game.SpawnPowerup();
-			game.powerUpTimeout = Math.random() * 100 + 5000;
+			game.powerUpTimeout = 0;
 		}
 	}
 
@@ -81,6 +83,8 @@ class Game
 	static BaseTurnSpeed = 2;
 	static TrailStepSize = 5;
 	static PowerUpSize = 16;
+	static BasePowerUpSpawnRate = 5000;
+	static DrawPowerUpOutlines = false;
 
 	static PlayerNames = [
 		"Franz",
@@ -99,6 +103,7 @@ class Game
 	constructor(canvas)
 	{
 		this.IsRunning = false;
+		this.RoundEnd = false;
 		this.ShowFrameRate = true;
 		this.LastFrameTime = 0;
 		this.LastFrameTimeStamp = Date.now();
@@ -106,11 +111,19 @@ class Game
 		this.players = [];
 
 		this.powerUps = [];
-		this.powerUpTimeout = 5000;
+		this.powerUpTimeout = 0;
 
 		this.canvas = canvas;
 		this.context = canvas.getContext("2d");
 		this.SetupCanvasContext(canvas);
+	}
+
+	get powerUpSpawnRate()
+	{
+		let powerUpSpawnRateReducers = 0;
+		this.players.forEach(player => powerUpSpawnRateReducers += player.PowerUpsOfTypeCount(PowerUpTypes.FastPowerUpSpawn));
+
+		return Game.BasePowerUpSpawnRate /= (powerUpSpawnRateReducers + 1);
 	}
 
 	Start()
@@ -119,6 +132,9 @@ class Game
 		{ return; }
 
 		this.StartRound();
+
+		this.CreatePlayerScores();
+
 
 		setTimeout(GameUpdateLoop, 0);
 		window.requestAnimationFrame(GameRenderLoop);
@@ -176,6 +192,19 @@ class Game
 		return firstAlivePlayerFound;
 	}
 
+	NumberOfPlayersAlive()
+	{
+		let alivePlayerCount = 0;
+
+		for (let player of this.players)
+		{
+			if (!player.IsDead)
+			{ alivePlayerCount++; }
+		}
+
+		return alivePlayerCount;
+	}
+
 	GetFirstLivingPlayer()
 	{
 		for (let player of this.players)
@@ -216,13 +245,14 @@ class Game
 		this.context.strokeStyle = player.color;
 
 		this.context.beginPath();
-		let lastSize = player.trail[0].size;
+		let lastSize = player.trail.length > 0 ? player.trail[0].size : 0;
 
 		for (let i = 0; i < player.trail.length; i++)
 		{
 			if (lastSize !== player.trail[i].size)
 			{
 				this.context.stroke();
+				this.context.beginPath();
 				lastSize = player.trail[i].size;
 			}
 			this.context.lineWidth = player.trail[i].size;
@@ -246,9 +276,27 @@ class Game
 	DrawPowerup(powerUp)
 	{
 		this.context.beginPath();
-		this.context.fillStyle = this.GetPowerUpSprite(powerUp);
-		this.context.arc(powerUp.position.x, powerUp.position.y, Game.PowerUpSize, 0, 2 * Math.PI);
-		this.context.fill();
+
+		if (Game.DrawPowerUpOutlines)
+		{
+			this.context.strokeStyle = "#FF0000";
+			this.context.arc(powerUp.position.x, powerUp.position.y, Game.PowerUpSize + 0.5, 0, 2 * Math.PI);
+			this.context.stroke();
+		}
+
+		let sprite = document.getElementById("PowerUpSprite" + powerUp.type);
+
+		if (!sprite)
+		{
+			this.context.fillStyle = "#FF00FF";
+			this.context.arc(powerUp.position.x, powerUp.position.y, Game.PowerUpSize, 0, 2 * Math.PI);
+			this.context.fill();
+		}
+		else
+		{
+			let sprite = document.getElementById("PowerUpSprite" + powerUp.type);
+			this.context.drawImage(sprite, powerUp.position.x - Game.PowerUpSize, powerUp.position.y - Game.PowerUpSize, Game.PowerUpSize * 2, Game.PowerUpSize * 2);
+		}
 	}
 
 	clearCanvas()
@@ -260,7 +308,9 @@ class Game
 	{
 		if (keyboardEventArgs.code === "Space")
 		{
-			if (this.IsRunning)
+			if (this.RoundEnd)
+			{ this.StartRound(); }
+			else if (this.IsRunning)
 			{ this.Pause(); }
 			else
 			{ this.UnPause(); }
@@ -293,10 +343,14 @@ class Game
 
 	StartRound()
 	{
+		this.RoundEnd = false;
 		this.ClearBoard();
 
 		this.players.forEach(player =>
 		{
+			player.IsDead = false;
+			player.activePowerUps = [];
+
 			let playerTooCloseToOtherPlayer;
 
 			do
@@ -323,65 +377,39 @@ class Game
 	EndRound()
 	{
 		this.IsRunning = false;
-		console.log(this.GetFirstLivingPlayer().name, "won");
+		this.RoundEnd = true;
+		let winner = this.GetFirstLivingPlayer();
+		winner.score += this.players.length;
+		winner.UpdateScore();
+
+		console.log(winner.name, "won");
 
 		// TODO: display win message
-
-		setTimeout(this.StartRound, 5000); // probably wont work
 	}
 
 	ClearBoard()
 	{
-		//this.players.forEach(player => player.ClearTrail());
-
-		// TODO: clear powerups
+		this.players.forEach(player => player.ClearTrail());
+		this.powerUps = [];
 	}
 
 	SpawnPowerup()
 	{
 		this.powerUps.push({
 			position: {x: Math.random() * canvas.width * 0.8 + canvas.width * 0.1, y: Math.random() * canvas.height * 0.8 + canvas.height * 0.1},
-			//type: Math.floor(Math.random() * 13),
-			type: PowerUpTypes.Invincible,
+			type: Math.floor(Math.random() * 9 + 1),
+			//type: PowerUpTypes.Invincible,
 			duration: 5000
 		});
+		if (this.powerUps[this.powerUps.length - 1].type === PowerUpTypes.FastPowerUpSpawn)
+		{ this.powerUps[this.powerUps.length - 1].duration = 50000; }
 	}
 
-	GetPowerUpSprite(powerUp)
-	{
-		if (powerUp.type === PowerUpTypes.Invincible)
-		{ return "#FF0000"; }
-		if (powerUp.type === PowerUpTypes.Fast)
-		{ return "#FF00FF"; }
-		if (powerUp.type === PowerUpTypes.AllFast)
-		{ return "#FFFF00"; }
-		if (powerUp.type === PowerUpTypes.Slow)
-		{ return "#00FFFF"; }
-		if (powerUp.type === PowerUpTypes.AllSlow)
-		{ return "#AAAAAA"; }
-		if (powerUp.type === PowerUpTypes.Thick)
-		{ return "#FFFFFF"; }
-		if (powerUp.type === PowerUpTypes.AllThick)
-		{ return "#AAA000"; }
-		if (powerUp.type === PowerUpTypes.Thin)
-		{ return "#000AAA"; }
-		if (powerUp.type === PowerUpTypes.AllThin)
-		{ return "#123456"; }
-		if (powerUp.type === PowerUpTypes.ClearScreen)
-		{ return "#789ABC"; }
-		if (powerUp.type === PowerUpTypes.TeleportWalls)
-		{ return "#DEF012"; }
-		if (powerUp.type === PowerUpTypes.SharpTurn)
-		{ return "#0F1E2D"; }
-		if (powerUp.type === PowerUpTypes.FastPowerUpSpawn)
-		{ return "#F0E1D2"; }
-	}
-
-	PickupPowerUp(position)
+	PickupPowerUp(position, playerSize)
 	{
 		for (let i = 0; i < this.powerUps.length; i++)
 		{
-			if (Point.Subtract(position, this.powerUps[i].position).LengthSquared() < Game.PowerUpSize * Game.PowerUpSize)
+			if (Point.Subtract(position, this.powerUps[i].position).LengthSquared() < Game.PowerUpSize * Game.PowerUpSize * 4 - playerSize * playerSize) // TODO: fix
 			{
 				let pickedUpPowerUp = this.powerUps[i];
 				this.powerUps.splice(i, 1);
@@ -390,6 +418,28 @@ class Game
 		}
 
 		return undefined;
+	}
+
+	CreatePlayerScores()
+	{
+		let playerScoreTemplate = document.getElementById("PlayerScoreTemplate");
+
+		this.players.forEach(player =>
+		{
+			playerScoreTemplate.content.querySelector(".PlayerNameTag").textContent = player.name;
+			playerScoreTemplate.content.querySelector(".PlayerScore").textContent = player.score;
+
+			let templateClone = document.importNode(playerScoreTemplate.content, true);
+			templateClone.querySelector(".SinglePlayerScore").id = player.playerScoreCardId;
+			document.getElementById("Scoreboard").appendChild(templateClone);
+
+			let playerScoreCanvas = document.getElementById(player.playerScoreCardId).querySelector("canvas");
+			let playerScoreCanvasContext = playerScoreCanvas.getContext("2d");
+			playerScoreCanvasContext.beginPath();
+			playerScoreCanvasContext.fillStyle = player.color;
+			playerScoreCanvasContext.arc(playerScoreCanvas.width / 2, playerScoreCanvas.height / 2, playerScoreCanvas.width / 2, 0, 2 * Math.PI);
+			playerScoreCanvasContext.fill();
+		});
 	}
 }
 
@@ -413,6 +463,8 @@ class Player
 		this.activePowerUps = [];
 
 		this.dashTimeout = 5;
+
+		this.score = 0;
 
 		this.position = new Point(0, 0);
 		this.direction = new Point(1, 0);
@@ -449,7 +501,7 @@ class Player
 		let lastPosition = {x: this.position.x, y: this.position.y};
 
 		this.position.Add(this.direction.Multiply(deltaTime * this.speed));
-		this.AddPowerUp(game.PickupPowerUp(this.position));
+		this.AddPowerUp(game.PickupPowerUp(this.position, this.size));
 
 		let difference = {x: this.position.x - lastPosition.x, y: this.position.y - lastPosition.y};
 
@@ -472,10 +524,25 @@ class Player
 		return Game.BaseSpeed * (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Fast)) / (1 + this.PowerUpsOfTypeCount(PowerUpTypes.Slow));
 	}
 
+	get playerScoreCardId()
+	{
+		return "PlayerScore" + this.name;
+	}
+
 	Kill()
 	{
 		this.IsDead = true;
+		this.score += game.players.length - game.NumberOfPlayersAlive();
+		this.UpdateScore();
+
 		console.log(this.name, "died")
+	}
+
+	UpdateScore()
+	{
+		let scoreCard = document.getElementById(this.playerScoreCardId);
+		scoreCard.style.order = this.score;
+		scoreCard.querySelector(".PlayerScore").textContent = this.score;
 	}
 
 	IntersectsWithOtherPlayer(otherPlayer)
@@ -483,13 +550,19 @@ class Player
 		if (!this.currentTrailSegment)
 		{ return false; }
 
-		let iterationTarget = this === otherPlayer ? otherPlayer.trail.length - 2 : otherPlayer.trail.length;
+		let iterationTarget = this === otherPlayer ? otherPlayer.trail.length - Math.max(2, (this.size * this.size / Game.TrailStepSize)) : otherPlayer.trail.length;
+
+		let currentTrailSegment;
 
 		// TODO: check not only for intersections, but also for being closer to another line than lineWidth (as that would also cross the other line visually)
 		for (let i = 0; i < iterationTarget; i++)
 		{
-			if (Utilities.DoLineSegmentsIntersect(otherPlayer.trail[i].startPoint, otherPlayer.trail[i].endPoint, this.currentTrailSegment.startPoint, this.position))
-			{ return true; }
+			currentTrailSegment = otherPlayer.trail[i];
+			if (Utilities.DoLineSegmentsIntersect(currentTrailSegment.startPoint, currentTrailSegment.endPoint, this.currentTrailSegment.startPoint, this.position) ||
+				Utilities.distanceToSegmentSquared(this.position, currentTrailSegment) < this.size * this.size)
+			{
+				return true;
+			}
 		}
 		return this === otherPlayer || !otherPlayer.currentTrailSegment ?
 			false :
@@ -683,14 +756,17 @@ const PowerUpTypes = Object.freeze(
 		"AllFast": 3,
 		"Slow": 4,
 		"AllSlow": 5,
-		"Thick": 6,
-		"AllThick": 7,
-		"Thin": 8,
-		"AllThin": 9,
-		"ClearScreen": 10,
+		"ClearScreen": 6,
+		"FastPowerUpSpawn": 7,
+		"Thick": 8,
+		"AllThick": 9,
+		/*
+		"Thin": 10,
+		"AllThin": 11,
+		/*
 		"TeleportWalls": 11,
 		"SharpTurn": 12,
-		"FastPowerUpSpawn": 13
+		 */
 	}
 );
 
@@ -720,5 +796,62 @@ class Utilities
 			(-intersectionPoint2.x * intersectionPoint1.y + intersectionPoint1.x * intersectionPoint2.y);
 
 		return s >= 0 && s <= 1 && t >= 0 && t <= 1;
+	}
+
+	// Algorithm taken from: https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
+	static distanceToSegmentSquared(point, lineSegment)
+	{
+		let lineSegmentLengthSquared = Point.Subtract(lineSegment.startPoint, lineSegment.endPoint).LengthSquared();
+
+		if (lineSegmentLengthSquared === 0)
+		{ return Point.Subtract(point, lineSegment.startPoint).LengthSquared(); }
+
+		let t = ((point.x - lineSegment.startPoint.x) * (lineSegment.endPoint.x - lineSegment.startPoint.x) +
+			(point.y - lineSegment.startPoint.y) * (lineSegment.endPoint.y - lineSegment.startPoint.y)) / lineSegmentLengthSquared;
+
+		t = Math.max(0, Math.min(1, t));
+
+		return Point.Subtract(point, {
+			x: lineSegment.startPoint.x + t * (lineSegment.endPoint.x - lineSegment.startPoint.x),
+			y: lineSegment.startPoint.y + t * (lineSegment.endPoint.y - lineSegment.startPoint.y)
+		}).LengthSquared();
+	}
+
+	static CreateImageElements()
+	{
+		const sprites = [
+			{url: "./Sprites/FasterOthers.png", powerUpId: 3, description: "Makes all others faster"},
+			{url: "./Sprites/FasterSelf.png", powerUpId: 2, description: "Makes you faster"},
+			{url: "./Sprites/SlowerOthers.png", powerUpId: 5, description: "Makes all others slower"},
+			{url: "./Sprites/SlowerSelf.png", powerUpId: 4, description: "Makes you slower"},
+			{url: "./Sprites/ThickerOthers.png", powerUpId: 9, description: "Makes all others thicker"},
+			{url: "./Sprites/ThickerSelf.png", powerUpId: 8, description: "Makes you thicker"},
+			{url: "./Sprites/ThinnerOthers.png", powerUpId: 11, description: "Makes all others thinner"},
+			{url: "./Sprites/ThinnerSelf.png", powerUpId: 10, description: "Makes you thinner"},
+			{url: "./Sprites/FasterPowerUpSpawn.png", powerUpId: 7, description: "Makes power-ups spawn faster"},
+			{url: "./Sprites/ClearBoard.png", powerUpId: 6, description: "Clears the board from all lines and power-ups"},
+			{url: "./Sprites/Invincible.png", powerUpId: 1, description: "Makes you invincible for some time"},
+		];
+
+		sprites.forEach(spriteUrl => this.CreateSingleSprite(spriteUrl));
+	}
+
+	static CreateSingleSprite(spriteUrl)
+	{
+		let spriteId = "PowerUpSprite" + spriteUrl.powerUpId;
+		let powerUpTemplate = document.getElementById("PowerUpListItemTemplate");
+		let powerUpListItem = powerUpTemplate.content.querySelector("li");
+
+		powerUpTemplate.content.querySelector("div").textContent = spriteUrl.description;
+		powerUpListItem.id = spriteId;
+
+		let templateClone = document.importNode(powerUpTemplate.content, true);
+
+		let sprite = new Image(Game.PowerUpSize * 2, Game.PowerUpSize * 2);
+		sprite.id = "PowerUpSprite" + spriteUrl.powerUpId;
+		sprite.src = spriteUrl.url;
+
+		document.getElementById("PowerUpList").appendChild(templateClone);
+		document.getElementById(spriteId).insertBefore(sprite, document.getElementById(spriteId).firstChild);
 	}
 }

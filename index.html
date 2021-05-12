@@ -4,14 +4,36 @@
 	<meta charset="UTF-8">
 	<title>Curve Fever</title>
 	<link rel="stylesheet" href="style.css" />
+	<link rel="preconnect" href="https://fonts.gstatic.com">
+	<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
 
 <h1>Curve Fever</h1>
 
 <div class="Content">
-	<canvas id="Canvas"></canvas>
+	<div class="GameContent Flex">
+		<canvas id="Canvas"></canvas>
+		<div id="Scoreboard" class="Flex">
+			<template id="PlayerScoreTemplate">
+				<div class="SinglePlayerScore Flex">
+					<canvas width="50" height="50"></canvas>
+					<div class="PlayerScoreTextContent">
+						<div class="PlayerNameTag"></div>
+						<div class="PlayerScore"></div>
+					</div>
+				</div>
+			</template>
+		</div>
+	</div>
 	<p id="debugLabel"></p>
+	<ul id="PowerUpList" class="Flex">
+		<template id="PowerUpListItemTemplate">
+			<li class="PowerUpListItem Flex">
+				<div class="PowerUpItemDescription"></div>
+			</li>
+		</template>
+	</ul>
 </div>
 
 </body>
