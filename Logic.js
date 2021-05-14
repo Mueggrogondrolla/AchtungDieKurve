@@ -41,7 +41,7 @@ function GameUpdateLoop()
 		game.powerUpTimeout += game.LastFrameTime;
 		if (game.powerUpTimeout > game.powerUpSpawnRate)
 		{
-			game.SpawnPowerup();
+			game.SpawnPowerUp();
 			game.powerUpTimeout = 0;
 		}
 	}
@@ -396,7 +396,7 @@ class Game
 		this.powerUps = [];
 	}
 
-	SpawnPowerup()
+	SpawnPowerUp()
 	{
 		let type = Math.floor(Math.random() * 11 + 1);
 		this.powerUps.push({
@@ -793,12 +793,27 @@ class Utilities
 		let intersectionPoint1 = new Point(point2.x - point1.x, point2.y - point1.y);
 		let intersectionPoint2 = new Point(point4.x - point3.x, point4.y - point3.y);
 
-		let s = (-intersectionPoint1.y * (point1.x - point3.x) + intersectionPoint1.x * (point1.y - point3.y)) /
-			(-intersectionPoint2.x * intersectionPoint1.y + intersectionPoint1.x * intersectionPoint2.y);
-		let t = (intersectionPoint2.x * (point1.y - point3.y) - intersectionPoint2.y * (point1.x - point3.x)) /
-			(-intersectionPoint2.x * intersectionPoint1.y + intersectionPoint1.x * intersectionPoint2.y);
+		let denominator = intersectionPoint1.x * intersectionPoint2.y - intersectionPoint2.x * intersectionPoint1.y;
+		if (denominator === 0)
+		{
+			return false; // Collinear
+		}
+		let denominatorPositive = denominator > 0;
 
-		return s >= 0 && s <= 1 && t >= 0 && t <= 1;
+		let intersectionPoint3 = new Point(point1.x - point3.x, point1.y - point3.y);
+		let s_number = intersectionPoint1.x * intersectionPoint3.y - intersectionPoint1.y * intersectionPoint3.x;
+		if ((s_number < 0) === denominatorPositive)
+		{
+			return 0; // No collision
+		}
+
+		let t_number = intersectionPoint2.x * intersectionPoint3.y - intersectionPoint2.y * intersectionPoint3.x;
+		if ((t_number < 0) === denominatorPositive || (s_number > denominator) === denominatorPositive || (t_number > denominator) === denominatorPositive)
+		{
+			return 0; // No collision
+		}
+
+		return true;
 	}
 
 	// Algorithm taken from: https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
