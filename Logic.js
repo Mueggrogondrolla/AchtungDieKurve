@@ -8,8 +8,12 @@ window.onload = function ()
 	canvas.height = canvas.style.height;
 
 	game = new Game(canvas);
-	game.AddPlayer(new Player(Game.PlayerNames[Math.floor(Math.random() * Game.PlayerNames.length)], '#ABCDEF', "a", "s"));
-	game.AddPlayer(new Player(Game.PlayerNames[Math.floor(Math.random() * Game.PlayerNames.length)], '#123456', "ArrowLeft", "ArrowRight"));
+	game.AddPlayer(new Player("Bäm", '#e289b9', "ArrowLeft", "ArrowRight"));
+	//game.AddPlayer(new Player("Flo", '#1a4e85', "+", "-"));
+	//game.AddPlayer(new Player("Hönning", '#1c7016', "q", "a"));
+	//game.AddPlayer(new Player("Bimu", '#ffffff', "y", "x"));
+	game.AddPlayer(new Player("Jacky", '#eebc0d', ",", "."));
+	//game.AddPlayer(new Player("Mapfi", '#ff0000', "v", "b"));
 
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
@@ -65,8 +69,6 @@ function GameRenderLoop()
 	game.players.forEach(player => game.drawTrail(player));
 	game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
 
-	//document.getElementById("debugLabel").innerText = game.players[1].untrackedTrailLength;
-
 	window.requestAnimationFrame(GameRenderLoop);
 }
 
@@ -80,7 +82,7 @@ class Game
 	// Constants
 	static BaseLineWidth = 4;
 	static BaseSpeed = 128;
-	static BaseTurnSpeed = 2;
+	static BaseTurnSpeed = 3;
 	static TrailStepSize = 5;
 	static PowerUpSize = 16;
 	static BasePowerUpSpawnRate = 5000;
@@ -123,7 +125,7 @@ class Game
 		let powerUpSpawnRateReducers = 0;
 		this.players.forEach(player => powerUpSpawnRateReducers += player.PowerUpsOfTypeCount(PowerUpTypes.FastPowerUpSpawn));
 
-		return Game.BasePowerUpSpawnRate /= (powerUpSpawnRateReducers + 1);
+		return Game.BasePowerUpSpawnRate / (powerUpSpawnRateReducers + 1);
 	}
 
 	Start()
@@ -135,6 +137,7 @@ class Game
 
 		this.CreatePlayerScores();
 
+		// for (let i = 0; i < 10; i++) { this.SpawnPowerup(); }
 
 		setTimeout(GameUpdateLoop, 0);
 		window.requestAnimationFrame(GameRenderLoop);
@@ -284,7 +287,7 @@ class Game
 			this.context.stroke();
 		}
 
-		let sprite = document.getElementById("PowerUpSprite" + powerUp.type);
+		let sprite = document.getElementById("PowerUpSprite" + powerUp.type).querySelector("img");
 
 		if (!sprite)
 		{
@@ -294,7 +297,6 @@ class Game
 		}
 		else
 		{
-			let sprite = document.getElementById("PowerUpSprite" + powerUp.type);
 			this.context.drawImage(sprite, powerUp.position.x - Game.PowerUpSize, powerUp.position.y - Game.PowerUpSize, Game.PowerUpSize * 2, Game.PowerUpSize * 2);
 		}
 	}
@@ -308,6 +310,7 @@ class Game
 	{
 		if (keyboardEventArgs.code === "Space")
 		{
+			keyboardEventArgs.preventDefault(); // to prevent auto scrolling to the bottom of the page
 			if (this.RoundEnd)
 			{ this.StartRound(); }
 			else if (this.IsRunning)
@@ -395,14 +398,12 @@ class Game
 
 	SpawnPowerup()
 	{
+		let type = Math.floor(Math.random() * 11 + 1);
 		this.powerUps.push({
 			position: {x: Math.random() * canvas.width * 0.8 + canvas.width * 0.1, y: Math.random() * canvas.height * 0.8 + canvas.height * 0.1},
-			type: Math.floor(Math.random() * 9 + 1),
-			//type: PowerUpTypes.Invincible,
-			duration: 5000
+			type: type,
+			duration: type === PowerUpTypes.FastPowerUpSpawn ? 50000 : 5000
 		});
-		if (this.powerUps[this.powerUps.length - 1].type === PowerUpTypes.FastPowerUpSpawn)
-		{ this.powerUps[this.powerUps.length - 1].duration = 50000; }
 	}
 
 	PickupPowerUp(position, playerSize)
@@ -413,7 +414,7 @@ class Game
 			{
 				let pickedUpPowerUp = this.powerUps[i];
 				this.powerUps.splice(i, 1);
-				return pickedUpPowerUp;
+				return new PowerUp(pickedUpPowerUp.type, pickedUpPowerUp.duration);
 			}
 		}
 
@@ -481,6 +482,9 @@ class Player
 
 	Update(deltaTime)
 	{
+		if (this.IsDead)
+		{ return; }
+
 		this.dashTimeout -= deltaTime;
 		if (this.dashTimeout < 0)
 		{
@@ -490,13 +494,13 @@ class Player
 
 		this.UpdatePowerUps();
 
-		if (this.IsDead)
-		{ return; }
-
-		if (this.movingLeft)
+		let reverseSteering = this.PowerUpsOfTypeCount(PowerUpTypes.ReverseSteering) > 0;
+		if ((this.movingLeft && !reverseSteering) || (this.movingRight && reverseSteering))
 		{ this.direction.Rotate(-Game.BaseTurnSpeed * deltaTime); }
-		else if (this.movingRight)
+		else if ((this.movingRight && !reverseSteering) || (this.movingLeft && reverseSteering))
 		{ this.direction.Rotate(Game.BaseTurnSpeed * deltaTime); }
+
+		this.direction.Normalize();
 
 		let lastPosition = {x: this.position.x, y: this.position.y};
 
@@ -554,14 +558,13 @@ class Player
 
 		let currentTrailSegment;
 
-		// TODO: check not only for intersections, but also for being closer to another line than lineWidth (as that would also cross the other line visually)
 		for (let i = 0; i < iterationTarget; i++)
 		{
 			currentTrailSegment = otherPlayer.trail[i];
 			if (Utilities.DoLineSegmentsIntersect(currentTrailSegment.startPoint, currentTrailSegment.endPoint, this.currentTrailSegment.startPoint, this.position) ||
 				Utilities.distanceToSegmentSquared(this.position, currentTrailSegment) < this.size * this.size)
 			{
-				return true;
+				return true; // TODO: fix issue, where player kills himself when picking up the thinner powerUp
 			}
 		}
 		return this === otherPlayer || !otherPlayer.currentTrailSegment ?
@@ -603,9 +606,11 @@ class Player
 			powerUp.type === PowerUpTypes.Thick ||
 			powerUp.type === PowerUpTypes.Slow ||
 			powerUp.type === PowerUpTypes.Fast ||
-			powerUp.type === PowerUpTypes.Invincible)
+			powerUp.type === PowerUpTypes.Invincible ||
+			powerUp.type === PowerUpTypes.ReverseSteering ||
+			powerUp.type === PowerUpTypes.FastPowerUpSpawn)
 		{
-			powerUp.startTime = Date.now();
+			powerUp.StartUse();
 			this.activePowerUps.push(powerUp);
 		}
 
@@ -617,35 +622,23 @@ class Player
 		}
 		else if (powerUp.type === PowerUpTypes.AllFast)
 		{
-			game.players.forEach(player =>
-			{
-				if (player !== this)
-				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Fast, powerUp.duration)); }
-			});
+			this.AddPowerUpToAllOthers(new PowerUp(PowerUpTypes.Fast, powerUp.duration));
 		}
 		else if (powerUp.type === PowerUpTypes.AllSlow)
 		{
-			game.players.forEach(player =>
-			{
-				if (player !== this)
-				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Slow, powerUp.duration)); }
-			});
+			this.AddPowerUpToAllOthers(new PowerUp(PowerUpTypes.Slow, powerUp.duration));
 		}
 		else if (powerUp.type === PowerUpTypes.AllThick)
 		{
-			game.players.forEach(player =>
-			{
-				if (player !== this)
-				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Thick, powerUp.duration)); }
-			});
+			this.AddPowerUpToAllOthers(new PowerUp(PowerUpTypes.Thick, powerUp.duration));
 		}
 		else if (powerUp.type === PowerUpTypes.AllThin)
 		{
-			game.players.forEach(player =>
-			{
-				if (player !== this)
-				{ player.AddPowerUp(new PowerUp(PowerUpTypes.Thin, powerUp.duration)); }
-			});
+			this.AddPowerUpToAllOthers(new PowerUp(PowerUpTypes.Thin, powerUp.duration));
+		}
+		else if (powerUp.type === PowerUpTypes.AllReverseSteering)
+		{
+			this.AddPowerUpToAllOthers(new PowerUp(PowerUpTypes.ReverseSteering, powerUp.duration));
 		}
 		else if ((powerUp.type === PowerUpTypes.Thick || powerUp.type === PowerUpTypes.Thin) && this.currentTrailSegment)
 		{
@@ -655,6 +648,15 @@ class Player
 		{
 			game.ClearBoard();
 		}
+	}
+
+	AddPowerUpToAllOthers(powerUp)
+	{
+		game.players.forEach(player =>
+		{
+			if (player !== this)
+			{ player.AddPowerUp(powerUp); }
+		});
 	}
 
 	RemovePowerUp(powerUp)
@@ -703,11 +705,6 @@ class Point
 	{
 		this.x += point.x;
 		this.y += point.y;
-	}
-
-	Subtract(point)
-	{
-		this.Add(point.Multiply(-1));
 	}
 
 	static Subtract(point1, point2)
@@ -760,23 +757,29 @@ const PowerUpTypes = Object.freeze(
 		"FastPowerUpSpawn": 7,
 		"Thick": 8,
 		"AllThick": 9,
+		"ReverseSteering": 10,
+		"AllReverseSteering": 11,
 		/*
-		"Thin": 10,
-		"AllThin": 11,
+		"Thin": 12,
+		"AllThin": 13,
 		/*
-		"TeleportWalls": 11,
-		"SharpTurn": 12,
+		"TeleportWalls": 14,
+		"SharpTurn": 15,
 		 */
 	}
 );
 
 class PowerUp
 {
-	constructor(type, duration)
+	constructor(type, duration = 5000)
 	{
 		this.duration = duration;
+		this.type = type;
+	}
+
+	StartUse()
+	{
 		this.startTime = Date.now();
-		this.type = type; // TODO: make some sophisticated system
 	}
 }
 
@@ -826,11 +829,13 @@ class Utilities
 			{url: "./Sprites/SlowerSelf.png", powerUpId: 4, description: "Makes you slower"},
 			{url: "./Sprites/ThickerOthers.png", powerUpId: 9, description: "Makes all others thicker"},
 			{url: "./Sprites/ThickerSelf.png", powerUpId: 8, description: "Makes you thicker"},
-			{url: "./Sprites/ThinnerOthers.png", powerUpId: 11, description: "Makes all others thinner"},
-			{url: "./Sprites/ThinnerSelf.png", powerUpId: 10, description: "Makes you thinner"},
+			{url: "./Sprites/ThinnerOthers.png", powerUpId: 13, description: "Makes all others thinner"},
+			{url: "./Sprites/ThinnerSelf.png", powerUpId: 12, description: "Makes you thinner"},
 			{url: "./Sprites/FasterPowerUpSpawn.png", powerUpId: 7, description: "Makes power-ups spawn faster"},
 			{url: "./Sprites/ClearBoard.png", powerUpId: 6, description: "Clears the board from all lines and power-ups"},
 			{url: "./Sprites/Invincible.png", powerUpId: 1, description: "Makes you invincible for some time"},
+			{url: "./Sprites/ReverseSteeringSelf.png", powerUpId: 10, description: "Inverts your steering"},
+			{url: "./Sprites/ReverseSteeringOthers.png", powerUpId: 11, description: "Inverts the steering of all other players"},
 		];
 
 		sprites.forEach(spriteUrl => this.CreateSingleSprite(spriteUrl));
@@ -853,5 +858,30 @@ class Utilities
 
 		document.getElementById("PowerUpList").appendChild(templateClone);
 		document.getElementById(spriteId).insertBefore(sprite, document.getElementById(spriteId).firstChild);
+	}
+
+	static GetRandomPlayerName()
+	{
+		let playerName;
+
+		do
+		{
+			playerName = Game.PlayerNames[Math.floor(Math.random() * Game.PlayerNames.length)];
+		}
+		while (Utilities.GameHasPlayerWithName(playerName));
+
+		return playerName;
+	}
+
+	static GameHasPlayerWithName(playerName)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].name === playerName)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 }
