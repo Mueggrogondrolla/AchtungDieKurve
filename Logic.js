@@ -19,6 +19,7 @@ window.onload = function ()
 
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
+	document.onmouseup = (eventArgs) => game.MouseUp(eventArgs);
 
 	Utilities.CreateImageElements();
 
@@ -91,6 +92,7 @@ class Game
 	static PowerUpSize = 16;
 	static BasePowerUpSpawnRate = 5000;
 	static DrawPowerUpOutlines = false;
+	static SetupMenuMargin = 32;
 
 	static PlayerNames = [
 		"Franz",
@@ -311,13 +313,40 @@ class Game
 
 	RenderSetupMenu()
 	{
-		let margin = 32;
 		let Headline = "Setup";
 
 		let textDimensions = game.context.measureText(Headline);
 
 		this.context.fillStyle = "#1d881c";
-		this.context.fillText(Headline, this.canvas.width / 2 - textDimensions.width / 2, textDimensions.fontBoundingBoxAscent + margin);
+		this.context.fillText(Headline, this.canvas.width / 2 - textDimensions.width / 2, textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin);
+
+		let y = textDimensions.fontBoundingBoxAscent + 5 * Game.SetupMenuMargin;
+		let firstColumnX = this.GetSetupMenuColumnWidth();
+		let secondColumnX = this.GetSetupMenuColumnWidth(1);
+		let thirdColumnX = this.GetSetupMenuColumnWidth(2);
+		let forthColumnX = this.GetSetupMenuColumnWidth(3);
+
+		this.context.fillStyle = "#BBBBBB";
+		this.context.fillText("Name", firstColumnX, y);
+		this.context.fillText("Left", secondColumnX, y);
+		this.context.fillText("Right", thirdColumnX, y);
+
+		for (let i = 0; i < this.players.length; i++)
+		{
+			y += (textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin);
+
+			this.context.fillStyle = this.players[i].color;
+			this.context.fillText(this.players[i].name, firstColumnX, y);
+			this.context.fillText(this.players[i].LeftKey, secondColumnX, y);
+			this.context.fillText(this.players[i].RightKey, thirdColumnX, y);
+			this.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * Game.SetupMenuMargin, Game.SetupMenuMargin);
+		}
+	}
+
+	GetSetupMenuColumnWidth(index = 0)
+	{
+		let firstColumnX = 3 * Game.SetupMenuMargin;
+		if (index === 0) { return firstColumnX; }
 
 		let longestName = this.context.measureText("Name").width;
 		let longestLeftKey = this.context.measureText("Left").width;
@@ -333,27 +362,13 @@ class Game
 			if (rightKeySize.width > longestRightKey) { longestRightKey = rightKeySize.width; }
 		});
 
-		let y = textDimensions.fontBoundingBoxAscent + 5 * margin;
-		let firstColumnX = 3 * margin;
-		let secondColumnX = firstColumnX + longestName + margin;
-		let thirdColumnX = secondColumnX + longestLeftKey + margin;
-		let forthColumnX = thirdColumnX + longestRightKey + margin;
+		let secondColumnX = firstColumnX + longestName + Game.SetupMenuMargin;
+		if (index === 1) { return secondColumnX; }
 
-		this.context.fillStyle = "#BBBBBB";
-		this.context.fillText("Name", firstColumnX, y);
-		this.context.fillText("Left", secondColumnX, y);
-		this.context.fillText("Right", thirdColumnX, y);
+		let thirdColumnX = secondColumnX + longestLeftKey + Game.SetupMenuMargin;
+		if (index === 2) { return thirdColumnX; }
 
-		for (let i = 0; i < this.players.length; i++)
-		{
-			y += (textDimensions.fontBoundingBoxAscent + margin);
-
-			this.context.fillStyle = this.players[i].color;
-			this.context.fillText(this.players[i].name, firstColumnX, y);
-			this.context.fillText(this.players[i].LeftKey, secondColumnX, y);
-			this.context.fillText(this.players[i].RightKey, thirdColumnX, y);
-			this.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * margin, margin);
-		}
+		return thirdColumnX + longestRightKey + Game.SetupMenuMargin;
 	}
 
 	clearCanvas()
@@ -394,6 +409,33 @@ class Game
 			if (keyboardEventArgs.key === player.RightKey)
 			{ player.movingRight = false; }
 		});
+	}
+
+	MouseUp(mouseEventArgs)
+	{
+		if (!this.InPlayerSetup) { return; }
+		console.log(mouseEventArgs)
+
+		let firstColumnX = this.GetSetupMenuColumnWidth();
+		let secondColumnX = this.GetSetupMenuColumnWidth(1);
+		let thirdColumnX = this.GetSetupMenuColumnWidth(2);
+		let forthColumnX = this.GetSetupMenuColumnWidth(3);
+
+		let clickedColumnIndex = 0;
+
+		if (mouseEventArgs.clientX < firstColumnX || mouseEventArgs.clientX > forthColumnX + 2 * Game.SetupMenuMargin)
+		{ clickedColumnIndex = -1; }
+		else if (mouseEventArgs.clientX < secondColumnX)
+		{ clickedColumnIndex = 0; }
+		else if (mouseEventArgs.clientX < thirdColumnX)
+		{ clickedColumnIndex = 1; }
+		else if (mouseEventArgs.clientX < forthColumnX)
+		{ clickedColumnIndex = 2; }
+		else
+		{ clickedColumnIndex = 3; }
+
+		console.log(clickedColumnIndex)
+		// TODO: get which player was clicked
 	}
 
 	AddPlayer(player)
