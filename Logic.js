@@ -9,18 +9,20 @@ window.onload = function ()
 
 	game = new Game(canvas);
 	game.AddPlayer(new Player("Bäm", '#e289b9', "ArrowLeft", "ArrowRight"));
-	//game.AddPlayer(new Player("Flo", '#1a4e85', "+", "-"));
-	//game.AddPlayer(new Player("Hönning", '#1c7016', "q", "a"));
-	//game.AddPlayer(new Player("Bimu", '#ffffff', "y", "x"));
+	game.AddPlayer(new Player("Flo", '#1a4e85', "+", "-"));
+	game.AddPlayer(new Player("Hönning", '#1c7016', "q", "a"));
+	game.AddPlayer(new Player("Bimu", '#ffffff', "y", "x"));
 	game.AddPlayer(new Player("Jacky", '#eebc0d', ",", "."));
-	//game.AddPlayer(new Player("Mapfi", '#ff0000', "v", "b"));
+	game.AddPlayer(new Player("Mapfi", '#ff0000', "v", "b"));
+
+	game.context.font = "2em 'Press Start 2P'";
 
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
 
 	Utilities.CreateImageElements();
 
-	StartGame();
+	//StartGame();
 };
 
 function GameUpdateLoop()
@@ -66,15 +68,17 @@ function GameRenderLoop()
 		}
 	}
 
-	game.players.forEach(player => game.drawTrail(player));
-	game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
+	if (game.InPlayerSetup)
+	{
+		game.RenderSetupMenu();
+	}
+	else
+	{
+		game.players.forEach(player => game.drawTrail(player));
+		game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
+	}
 
 	window.requestAnimationFrame(GameRenderLoop);
-}
-
-function StartGame()
-{
-	game.Start();
 }
 
 class Game
@@ -106,6 +110,7 @@ class Game
 	{
 		this.IsRunning = false;
 		this.RoundEnd = false;
+		this.InPlayerSetup = true;
 		this.ShowFrameRate = true;
 		this.LastFrameTime = 0;
 		this.LastFrameTimeStamp = Date.now();
@@ -118,6 +123,8 @@ class Game
 		this.canvas = canvas;
 		this.context = canvas.getContext("2d");
 		this.SetupCanvasContext(canvas);
+
+		window.requestAnimationFrame(GameRenderLoop);
 	}
 
 	get powerUpSpawnRate()
@@ -133,6 +140,8 @@ class Game
 		if (game.IsRunning)
 		{ return; }
 
+		this.InPlayerSetup = false;
+
 		this.StartRound();
 
 		this.CreatePlayerScores();
@@ -140,7 +149,6 @@ class Game
 		// for (let i = 0; i < 10; i++) { this.SpawnPowerup(); }
 
 		setTimeout(GameUpdateLoop, 0);
-		window.requestAnimationFrame(GameRenderLoop);
 	}
 
 	Pause()
@@ -301,6 +309,53 @@ class Game
 		}
 	}
 
+	RenderSetupMenu()
+	{
+		let margin = 32;
+		let Headline = "Setup";
+
+		let textDimensions = game.context.measureText(Headline);
+
+		this.context.fillStyle = "#1d881c";
+		this.context.fillText(Headline, this.canvas.width / 2 - textDimensions.width / 2, textDimensions.fontBoundingBoxAscent + margin);
+
+		let longestName = this.context.measureText("Name").width;
+		let longestLeftKey = this.context.measureText("Left").width;
+		let longestRightKey = this.context.measureText("Right").width;
+
+		this.players.forEach(player => {
+			let nameSize = this.context.measureText(player.name);
+			let leftKeySize = this.context.measureText(player.LeftKey);
+			let rightKeySize = this.context.measureText(player.RightKey);
+
+			if (nameSize.width > longestName) { longestName = nameSize.width; }
+			if (leftKeySize.width > longestLeftKey) { longestLeftKey = leftKeySize.width; }
+			if (rightKeySize.width > longestRightKey) { longestRightKey = rightKeySize.width; }
+		});
+
+		let y = textDimensions.fontBoundingBoxAscent + 5 * margin;
+		let firstColumnX = 3 * margin;
+		let secondColumnX = firstColumnX + longestName + margin;
+		let thirdColumnX = secondColumnX + longestLeftKey + margin;
+		let forthColumnX = thirdColumnX + longestRightKey + margin;
+
+		this.context.fillStyle = "#BBBBBB";
+		this.context.fillText("Name", firstColumnX, y);
+		this.context.fillText("Left", secondColumnX, y);
+		this.context.fillText("Right", thirdColumnX, y);
+
+		for (let i = 0; i < this.players.length; i++)
+		{
+			y += (textDimensions.fontBoundingBoxAscent + margin);
+
+			this.context.fillStyle = this.players[i].color;
+			this.context.fillText(this.players[i].name, firstColumnX, y);
+			this.context.fillText(this.players[i].LeftKey, secondColumnX, y);
+			this.context.fillText(this.players[i].RightKey, thirdColumnX, y);
+			this.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * margin, margin);
+		}
+	}
+
 	clearCanvas()
 	{
 		this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -311,7 +366,9 @@ class Game
 		if (keyboardEventArgs.code === "Space")
 		{
 			keyboardEventArgs.preventDefault(); // to prevent auto scrolling to the bottom of the page
-			if (this.RoundEnd)
+			if (this.InPlayerSetup)
+			{ this.Start(); }
+			else if (this.RoundEnd)
 			{ this.StartRound(); }
 			else if (this.IsRunning)
 			{ this.Pause(); }
