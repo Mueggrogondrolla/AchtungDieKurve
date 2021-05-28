@@ -337,6 +337,13 @@ class Game
 			{ this.Pause(); }
 			else
 			{ this.UnPause(); }
+
+			return;
+		}
+
+		if (this.InPlayerSetup)
+		{
+			this.setupMenu.KeyDown(keyboardEventArgs);
 		}
 
 		this.players.forEach(player =>
@@ -820,15 +827,15 @@ class SetupMenu
 					game.context.fillStyle = colorText;
 					game.context.fillRect(x, y, tileSize, tileSize);
 
-					if (this.mousePositionOnCanvas && this.mousePositionOnCanvas.x > x && this.mousePositionOnCanvas.x < x + tileSize &&
-						this.mousePositionOnCanvas.y > y && this.mousePositionOnCanvas.y < y + tileSize)
+					if (this.mousePositionOnCanvas.x > x && this.mousePositionOnCanvas.x < x + tileSize &&
+						this.mousePositionOnCanvas.y > y - tileSize && this.mousePositionOnCanvas.y < y)
 					{
 						highlightRectangleX = x;
-						highlightRectangleY = y;
+						highlightRectangleY = y - tileSize;
 						highlightRectangleColor = "rgb(" + (256 - r) + "," + (256 - g) + "," + (256 - b) + ")";
 					}
 
-					this.renderedObjects["Color_" + colorText] = {x: x, y: y, width: tileSize, height: tileSize};
+					this.renderedObjects["Color_" + colorText] = {x: x, y: y, width: tileSize, height: -tileSize};
 
 					counter++;
 					x += tileSize;
@@ -887,8 +894,13 @@ class SetupMenu
 
 	MouseClick(mouseEventArgs)
 	{
+		let anyColorPicking = Utilities.AnyPlayerIsColorPicking();
+		let colorPicker = undefined;
+
 		game.players.forEach(player =>
 		{
+			if (player.EditingColor) { colorPicker = player; }
+
 			player.EditingName = false;
 			player.EditingLeftKey = false;
 			player.EditingRightKey = false;
@@ -905,7 +917,19 @@ class SetupMenu
 			{
 				let objectParts = renderedObject.split('_');
 
-				if (objectParts[0] === "Player" && Utilities.GameHasPlayerWithName(objectParts[1]))
+				if (anyColorPicking)
+				{
+					console.log(objectParts)
+					if (objectParts[0] === "Color" && colorPicker)
+					{
+						console.log(objectParts)
+						colorPicker.color = objectParts[1];
+						colorPicker.EditingColor = false;
+					}
+
+					break;
+				}
+				else if (objectParts[0] === "Player" && Utilities.GameHasPlayerWithName(objectParts[1]))
 				{
 					if (objectParts[2] === "Name")
 					{ Utilities.GetPlayerWithName(objectParts[1]).EditingName = true; }
@@ -916,14 +940,9 @@ class SetupMenu
 					else if (objectParts[2] === "Color")
 					{
 						Utilities.GetPlayerWithName(objectParts[1]).EditingColor = true;
-
-						let colorPicker = document.getElementById("ColorPicker");
-						colorPicker.classList.remove("Hidden");
-						colorPicker.style.top = this.mousePositionOnCanvas.y + "px";
-						colorPicker.style.left = this.mousePositionOnCanvas.x + "px";
-						colorPicker.style.color = Utilities.GetPlayerWithName(objectParts[1]).color;
-						colorPicker.style.backgroundColor = Utilities.GetPlayerWithName(objectParts[1]).color;
 					}
+
+					break;
 				}
 			}
 		}
@@ -932,6 +951,41 @@ class SetupMenu
 	MouseMove(mouseEventArgs)
 	{
 		this.mousePositionOnCanvas = {x: mouseEventArgs.x - mouseEventArgs.target.offsetLeft, y: mouseEventArgs.y - mouseEventArgs.target.offsetTop};
+	}
+
+	KeyDown(keyboardEventArgs)
+	{
+		let allowedNameCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890öäüÖÄÜ-_+-";
+
+		game.players.forEach(player =>
+		{
+			if (player.EditingName)
+			{
+				if (keyboardEventArgs.code === "Enter")
+				{
+					player.EditingName = false;
+				}
+				else if (keyboardEventArgs.code === "Backspace")
+				{
+					player.name = player.name.slice(0, -1);
+				}
+				else if (allowedNameCharacters.includes(keyboardEventArgs.key))
+				{
+					player.name += keyboardEventArgs.key;
+				}
+			}
+			if (player.EditingRightKey)
+			{
+				player.RightKey = keyboardEventArgs.key;
+				player.EditingRightKey = false;
+			}
+			if (player.EditingLeftKey)
+			{
+				player.LeftKey = keyboardEventArgs.key;
+				player.EditingLeftKey = false;
+				player.EditingRightKey = true;
+			}
+		});
 	}
 }
 
