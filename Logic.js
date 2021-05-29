@@ -8,12 +8,8 @@ window.onload = function ()
 	canvas.height = canvas.style.height;
 
 	game = new Game(canvas);
-	game.AddPlayer(new Player("Bäm", '#e289b9', "ArrowLeft", "ArrowRight"));
-	game.AddPlayer(new Player("Flo", '#1a4e85', "+", "-"));
-	game.AddPlayer(new Player("Hönning", '#1c7016', "q", "a"));
-	game.AddPlayer(new Player("Bimu", '#ffffff', "y", "x"));
-	game.AddPlayer(new Player("Jacky", '#eebc0d', ",", "."));
-	game.AddPlayer(new Player("Mapfi", '#ff0000', "v", "b"));
+	game.AddRandomPlayer();
+	game.AddRandomPlayer();
 
 	game.context.font = "2em 'Press Start 2P'";
 
@@ -329,7 +325,7 @@ class Game
 		if (keyboardEventArgs.code === "Space")
 		{
 			keyboardEventArgs.preventDefault(); // to prevent auto scrolling to the bottom of the page
-			if (this.InPlayerSetup)
+			if (this.InPlayerSetup && game.players.length > 1) // TODO: add snake mode if only one player is there
 			{ this.Start(); }
 			else if (this.RoundEnd)
 			{ this.StartRound(); }
@@ -385,6 +381,11 @@ class Game
 	AddPlayer(player)
 	{
 		this.players.push(player);
+	}
+
+	AddRandomPlayer()
+	{
+		this.players.push(new Player(Utilities.GetRandomPlayerName(), Utilities.GetRandomPlayerColor(), Utilities.GetRandomPlayerKey(), Utilities.GetRandomPlayerKey()));
 	}
 
 	StartRound()
@@ -777,7 +778,13 @@ class SetupMenu
 
 			game.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * Game.SetupMenuMargin, Game.SetupMenuMargin);
 			this.renderedObjects["Player_" + game.players[i].name + "_Color"] = {x: forthColumnX, y: y, width: 2 * Game.SetupMenuMargin, height: Game.SetupMenuMargin};
+
+			game.context.fillStyle = "#FF0000";
+			this.RenderText("x", forthColumnX + 3 * Game.SetupMenuMargin, y, "Player_" + game.players[i].name + "_Delete");
 		}
+
+		game.context.fillStyle = "#00FF00";
+		this.RenderText("+", firstColumnX, y + textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin, "Player_Add");
 
 		if (Utilities.AnyPlayerIsColorPicking())
 		{
@@ -828,14 +835,14 @@ class SetupMenu
 					game.context.fillRect(x, y, tileSize, tileSize);
 
 					if (this.mousePositionOnCanvas.x > x && this.mousePositionOnCanvas.x < x + tileSize &&
-						this.mousePositionOnCanvas.y > y - tileSize && this.mousePositionOnCanvas.y < y)
+						this.mousePositionOnCanvas.y > y && this.mousePositionOnCanvas.y < y + tileSize)
 					{
 						highlightRectangleX = x;
-						highlightRectangleY = y - tileSize;
+						highlightRectangleY = y;
 						highlightRectangleColor = "rgb(" + (256 - r) + "," + (256 - g) + "," + (256 - b) + ")";
 					}
 
-					this.renderedObjects["Color_" + colorText] = {x: x, y: y, width: tileSize, height: -tileSize};
+					this.renderedObjects["Color_" + colorText] = {x: x, y: y + tileSize, width: tileSize, height: tileSize};
 
 					counter++;
 					x += tileSize;
@@ -899,7 +906,8 @@ class SetupMenu
 
 		game.players.forEach(player =>
 		{
-			if (player.EditingColor) { colorPicker = player; }
+			if (player.EditingColor)
+			{ colorPicker = player; }
 
 			player.EditingName = false;
 			player.EditingLeftKey = false;
@@ -919,27 +927,32 @@ class SetupMenu
 
 				if (anyColorPicking)
 				{
-					console.log(objectParts)
 					if (objectParts[0] === "Color" && colorPicker)
 					{
-						console.log(objectParts)
 						colorPicker.color = objectParts[1];
 						colorPicker.EditingColor = false;
-					}
 
-					break;
+						break;
+					}
 				}
-				else if (objectParts[0] === "Player" && Utilities.GameHasPlayerWithName(objectParts[1]))
+				else if (objectParts[0] === "Player")
 				{
-					if (objectParts[2] === "Name")
-					{ Utilities.GetPlayerWithName(objectParts[1]).EditingName = true; }
-					else if (objectParts[2] === "LeftKey")
-					{ Utilities.GetPlayerWithName(objectParts[1]).EditingLeftKey = true; }
-					else if (objectParts[2] === "RightKey")
-					{ Utilities.GetPlayerWithName(objectParts[1]).EditingRightKey = true; }
-					else if (objectParts[2] === "Color")
+					if (objectParts[1] === "Add")
 					{
-						Utilities.GetPlayerWithName(objectParts[1]).EditingColor = true;
+						game.AddRandomPlayer();
+					}
+					else if (Utilities.GameHasPlayerWithName(objectParts[1]))
+					{
+						if (objectParts[2] === "Name")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingName = true; }
+						else if (objectParts[2] === "LeftKey")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingLeftKey = true; }
+						else if (objectParts[2] === "RightKey")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingRightKey = true; }
+						else if (objectParts[2] === "Color")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingColor = true; }
+						else if (objectParts[2] === "Delete")
+						{ game.players.splice(game.players.indexOf(Utilities.GetPlayerWithName(objectParts[1])), 1); }
 					}
 
 					break;
@@ -964,6 +977,11 @@ class SetupMenu
 				if (keyboardEventArgs.code === "Enter")
 				{
 					player.EditingName = false;
+
+					if (player.name === "")
+					{
+						player.name = Utilities.GetRandomPlayerName();
+					}
 				}
 				else if (keyboardEventArgs.code === "Backspace")
 				{
@@ -1189,11 +1207,61 @@ class Utilities
 		return playerName;
 	}
 
+	static GetRandomPlayerColor()
+	{
+		let color;
+
+		do
+		{
+			color = "rgb(" + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + ")";
+		}
+		while (Utilities.GameHasPlayerWithColor(color));
+
+		return color;
+	}
+
+	static GetRandomPlayerKey()
+	{
+		let key, availableKeys = "abcdefghijklmnopqrstuvwxyz<^1234567890ß´,.-#öäü";
+
+		do
+		{
+			key = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+		}
+		while (Utilities.GameHasPlayerWithKeyBinding(key));
+
+		return key;
+	}
+
 	static GameHasPlayerWithName(playerName)
 	{
 		for (let i = 0; i < game.players.length; i++)
 		{
 			if (game.players[i].name === playerName)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static GameHasPlayerWithColor(color)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].color === color)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static GameHasPlayerWithKeyBinding(key)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].LeftKey === key || game.players[i].RightKey === key)
 			{
 				return true;
 			}
