@@ -779,8 +779,11 @@ class SetupMenu
 			game.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * Game.SetupMenuMargin, Game.SetupMenuMargin);
 			this.renderedObjects["Player_" + game.players[i].name + "_Color"] = {x: forthColumnX, y: y, width: 2 * Game.SetupMenuMargin, height: Game.SetupMenuMargin};
 
-			game.context.fillStyle = "#FF0000";
-			this.RenderText("x", forthColumnX + 3 * Game.SetupMenuMargin, y, "Player_" + game.players[i].name + "_Delete");
+			if (game.players.length > 2)
+			{
+				game.context.fillStyle = "#FF0000";
+				this.RenderText("x", forthColumnX + 3 * Game.SetupMenuMargin, y, "Player_" + game.players[i].name + "_Delete");
+			}
 		}
 
 		game.context.fillStyle = "#00FF00";
