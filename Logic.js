@@ -90,6 +90,7 @@ class Game
 	static BasePowerUpSpawnRate = 5000;
 	static DrawPowerUpOutlines = false;
 	static SetupMenuMargin = 32;
+	static MaxPlayerCount = 8;
 
 	static PlayerNames = [
 		"Franz",
@@ -786,8 +787,11 @@ class SetupMenu
 			}
 		}
 
-		game.context.fillStyle = "#00FF00";
-		this.RenderText("+", firstColumnX, y + textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin, "Player_Add");
+		if (game.players.length < Game.MaxPlayerCount)
+		{
+			game.context.fillStyle = "#00FF00";
+			this.RenderText("+", firstColumnX, y + textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin, "Player_Add");
+		}
 
 		if (Utilities.AnyPlayerIsColorPicking())
 		{
@@ -1216,6 +1220,7 @@ class Utilities
 
 		do
 		{
+			// TODO: generate the color in the same mode as the color picking (with 4 steps per primary color each)
 			color = "rgb(" + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + ")";
 		}
 		while (Utilities.GameHasPlayerWithColor(color));
