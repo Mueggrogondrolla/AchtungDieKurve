@@ -8,19 +8,19 @@ window.onload = function ()
 	canvas.height = canvas.style.height;
 
 	game = new Game(canvas);
-	game.AddPlayer(new Player("Bäm", '#e289b9', "ArrowLeft", "ArrowRight"));
-	//game.AddPlayer(new Player("Flo", '#1a4e85', "+", "-"));
-	//game.AddPlayer(new Player("Hönning", '#1c7016', "q", "a"));
-	//game.AddPlayer(new Player("Bimu", '#ffffff', "y", "x"));
-	game.AddPlayer(new Player("Jacky", '#eebc0d', ",", "."));
-	//game.AddPlayer(new Player("Mapfi", '#ff0000', "v", "b"));
+	game.AddRandomPlayer();
+	game.AddRandomPlayer();
+
+	game.context.font = "2em 'Press Start 2P'";
 
 	document.onkeydown = (eventArgs) => game.KeyDown(eventArgs);
 	document.onkeyup = (eventArgs) => game.KeyUp(eventArgs);
+	document.onmouseup = (eventArgs) => game.MouseUp(eventArgs);
+	document.onmousemove = (eventArgs) => game.MouseMove(eventArgs);
 
 	Utilities.CreateImageElements();
 
-	StartGame();
+	//StartGame();
 };
 
 function GameUpdateLoop()
@@ -66,15 +66,17 @@ function GameRenderLoop()
 		}
 	}
 
-	game.players.forEach(player => game.drawTrail(player));
-	game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
+	if (game.InPlayerSetup)
+	{
+		game.RenderSetupMenu();
+	}
+	else
+	{
+		game.players.forEach(player => game.drawTrail(player));
+		game.powerUps.forEach(powerUp => game.DrawPowerup(powerUp));
+	}
 
 	window.requestAnimationFrame(GameRenderLoop);
-}
-
-function StartGame()
-{
-	game.Start();
 }
 
 class Game
@@ -87,6 +89,8 @@ class Game
 	static PowerUpSize = 16;
 	static BasePowerUpSpawnRate = 5000;
 	static DrawPowerUpOutlines = false;
+	static SetupMenuMargin = 32;
+	static MaxPlayerCount = 8;
 
 	static PlayerNames = [
 		"Franz",
@@ -106,6 +110,7 @@ class Game
 	{
 		this.IsRunning = false;
 		this.RoundEnd = false;
+		this.InPlayerSetup = true;
 		this.ShowFrameRate = true;
 		this.LastFrameTime = 0;
 		this.LastFrameTimeStamp = Date.now();
@@ -118,6 +123,10 @@ class Game
 		this.canvas = canvas;
 		this.context = canvas.getContext("2d");
 		this.SetupCanvasContext(canvas);
+
+		this.setupMenu = new SetupMenu();
+
+		window.requestAnimationFrame(GameRenderLoop);
 	}
 
 	get powerUpSpawnRate()
@@ -133,6 +142,8 @@ class Game
 		if (game.IsRunning)
 		{ return; }
 
+		this.InPlayerSetup = false;
+
 		this.StartRound();
 
 		this.CreatePlayerScores();
@@ -140,7 +151,6 @@ class Game
 		// for (let i = 0; i < 10; i++) { this.SpawnPowerup(); }
 
 		setTimeout(GameUpdateLoop, 0);
-		window.requestAnimationFrame(GameRenderLoop);
 	}
 
 	Pause()
@@ -301,6 +311,11 @@ class Game
 		}
 	}
 
+	RenderSetupMenu()
+	{
+		this.setupMenu.Render();
+	}
+
 	clearCanvas()
 	{
 		this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -311,12 +326,21 @@ class Game
 		if (keyboardEventArgs.code === "Space")
 		{
 			keyboardEventArgs.preventDefault(); // to prevent auto scrolling to the bottom of the page
-			if (this.RoundEnd)
+			if (this.InPlayerSetup && game.players.length > 1) // TODO: add snake mode if only one player is there
+			{ this.Start(); }
+			else if (this.RoundEnd)
 			{ this.StartRound(); }
 			else if (this.IsRunning)
 			{ this.Pause(); }
 			else
 			{ this.UnPause(); }
+
+			return;
+		}
+
+		if (this.InPlayerSetup)
+		{
+			this.setupMenu.KeyDown(keyboardEventArgs);
 		}
 
 		this.players.forEach(player =>
@@ -339,9 +363,30 @@ class Game
 		});
 	}
 
+	MouseUp(mouseEventArgs)
+	{
+		if (!this.InPlayerSetup)
+		{ return; }
+
+		this.setupMenu.MouseClick(mouseEventArgs);
+	}
+
+	MouseMove(mouseEventArgs)
+	{
+		if (!this.InPlayerSetup)
+		{ return; }
+
+		this.setupMenu.MouseMove(mouseEventArgs);
+	}
+
 	AddPlayer(player)
 	{
 		this.players.push(player);
+	}
+
+	AddRandomPlayer()
+	{
+		this.players.push(new Player(Utilities.GetRandomPlayerName(), Utilities.GetRandomPlayerColor(), Utilities.GetRandomPlayerKey(), Utilities.GetRandomPlayerKey()));
 	}
 
 	StartRound()
@@ -451,6 +496,11 @@ class Player
 		this.color = color;
 		this.LeftKey = leftKey;
 		this.RightKey = rightKey;
+
+		this.EditingName = false;
+		this.EditingLeftKey = false;
+		this.EditingRightKey = false;
+		this.EditingColor = false;
 
 		this.movingRight = false;
 		this.movingLeft = false;
@@ -688,6 +738,282 @@ class Player
 	}
 }
 
+class SetupMenu
+{
+	debugDraw = false;
+
+	Render()
+	{
+		this.renderedObjects = [];
+
+		let Headline = "Setup";
+
+		let textDimensions = game.context.measureText(Headline);
+
+		game.context.fillStyle = "#1d881c";
+		this.RenderText(Headline, game.canvas.width / 2 - textDimensions.width / 2, textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin, "Headline");
+
+		let y = textDimensions.fontBoundingBoxAscent + 5 * Game.SetupMenuMargin;
+		let firstColumnX = this.GetSetupMenuColumnWidth();
+		let secondColumnX = this.GetSetupMenuColumnWidth(1);
+		let thirdColumnX = this.GetSetupMenuColumnWidth(2);
+		let forthColumnX = this.GetSetupMenuColumnWidth(3);
+
+		game.context.fillStyle = "#BBBBBB";
+		this.RenderText("Name", firstColumnX, y, "Name");
+		this.RenderText("Left", secondColumnX, y, "Left");
+		this.RenderText("Right", thirdColumnX, y, "Right");
+
+
+		for (let i = 0; i < game.players.length; i++)
+		{
+			y += (textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin);
+
+			game.context.fillStyle = game.players[i].color;
+			this.RenderText(game.players[i].name + (game.players[i].EditingName && Date.now() % 1000 < 500 ? "|" : ""),
+				firstColumnX, y, "Player_" + game.players[i].name + "_Name");
+			this.RenderText(game.players[i].LeftKey + (game.players[i].EditingLeftKey && Date.now() % 1000 < 500 ? "|" : ""),
+				secondColumnX, y, "Player_" + game.players[i].name + "_LeftKey");
+			this.RenderText(game.players[i].RightKey + (game.players[i].EditingRightKey && Date.now() % 1000 < 500 ? "|" : ""),
+				thirdColumnX, y, "Player_" + game.players[i].name + "_RightKey");
+
+			game.context.fillRect(forthColumnX, y - textDimensions.fontBoundingBoxAscent, 2 * Game.SetupMenuMargin, Game.SetupMenuMargin);
+			this.renderedObjects["Player_" + game.players[i].name + "_Color"] = {x: forthColumnX, y: y, width: 2 * Game.SetupMenuMargin, height: Game.SetupMenuMargin};
+
+			if (game.players.length > 2)
+			{
+				game.context.fillStyle = "#FF0000";
+				this.RenderText("x", forthColumnX + 3 * Game.SetupMenuMargin, y, "Player_" + game.players[i].name + "_Delete");
+			}
+		}
+
+		if (game.players.length < Game.MaxPlayerCount)
+		{
+			game.context.fillStyle = "#00FF00";
+			this.RenderText("+", firstColumnX, y + textDimensions.fontBoundingBoxAscent + Game.SetupMenuMargin, "Player_Add");
+		}
+
+		if (Utilities.AnyPlayerIsColorPicking())
+		{
+			this.RenderColorPalette();
+		}
+
+		if (this.debugDraw)
+		{
+			for (const renderedObject in this.renderedObjects)
+			{
+				let renderedObjectBox = this.renderedObjects[renderedObject];
+				game.context.strokeStyle = "#FF0000";
+				game.context.beginPath();
+				game.context.strokeRect(renderedObjectBox.x, renderedObjectBox.y - renderedObjectBox.height, renderedObjectBox.width, renderedObjectBox.height)
+			}
+
+			if (this.mousePositionOnCanvas)
+			{
+				game.context.fillStyle = "#FF0000";
+				game.context.arc(this.mousePositionOnCanvas.x, this.mousePositionOnCanvas.y, 4, 0, 2 * Math.PI);
+				game.context.fill();
+			}
+		}
+	}
+
+	RenderText(text, x, y, objectName)
+	{
+		game.context.fillText(text, x, y);
+		let textDimensions = game.context.measureText(text);
+		this.renderedObjects[objectName] = {x: x, y: y, width: textDimensions.width, height: textDimensions.fontBoundingBoxAscent};
+	}
+
+	RenderColorPalette()
+	{
+		let stepSize = 256 / (4 - 1);
+		let tileSize = ((game.canvas.width - 2 * Game.SetupMenuMargin) - ((game.canvas.width - 2 * Game.SetupMenuMargin) % 32)) / 16;
+		let x = Game.SetupMenuMargin, y = Game.SetupMenuMargin, highlightRectangleX = 0, highlightRectangleY = 0, highlightRectangleColor = "";
+		let counter = 0;
+
+		for (let r = 0; r <= 256; r += stepSize)
+		{
+			for (let g = 0; g <= 256; g += stepSize)
+			{
+				for (let b = 0; b <= 256; b += stepSize)
+				{
+					let colorText = "rgb(" + r + "," + g + "," + b + ")";
+					game.context.fillStyle = colorText;
+					game.context.fillRect(x, y, tileSize, tileSize);
+
+					if (this.mousePositionOnCanvas.x > x && this.mousePositionOnCanvas.x < x + tileSize &&
+						this.mousePositionOnCanvas.y > y && this.mousePositionOnCanvas.y < y + tileSize)
+					{
+						highlightRectangleX = x;
+						highlightRectangleY = y;
+						highlightRectangleColor = "rgb(" + (256 - r) + "," + (256 - g) + "," + (256 - b) + ")";
+					}
+
+					this.renderedObjects["Color_" + colorText] = {x: x, y: y + tileSize, width: tileSize, height: tileSize};
+
+					counter++;
+					x += tileSize;
+
+					if (x > game.canvas.width - 2 * Game.SetupMenuMargin)
+					{
+						x = Game.SetupMenuMargin;
+						y += tileSize;
+					}
+				}
+			}
+		}
+
+		if (highlightRectangleX !== 0)
+		{
+			game.context.strokeStyle = highlightRectangleColor;
+			game.context.lineWidth = 5;
+			game.context.strokeRect(highlightRectangleX, highlightRectangleY, tileSize, tileSize);
+		}
+	}
+
+	GetSetupMenuColumnWidth(index = 0)
+	{
+		let firstColumnX = 3 * Game.SetupMenuMargin;
+		if (index === 0)
+		{ return firstColumnX; }
+
+		let longestName = game.context.measureText("Name").width;
+		let longestLeftKey = game.context.measureText("Left").width;
+		let longestRightKey = game.context.measureText("Right").width;
+
+		game.players.forEach(player =>
+		{
+			let nameSize = game.context.measureText(player.name);
+			let leftKeySize = game.context.measureText(player.LeftKey);
+			let rightKeySize = game.context.measureText(player.RightKey);
+
+			if (nameSize.width > longestName)
+			{ longestName = nameSize.width; }
+			if (leftKeySize.width > longestLeftKey)
+			{ longestLeftKey = leftKeySize.width; }
+			if (rightKeySize.width > longestRightKey)
+			{ longestRightKey = rightKeySize.width; }
+		});
+
+		let secondColumnX = firstColumnX + longestName + Game.SetupMenuMargin;
+		if (index === 1)
+		{ return secondColumnX; }
+
+		let thirdColumnX = secondColumnX + longestLeftKey + Game.SetupMenuMargin;
+		if (index === 2)
+		{ return thirdColumnX; }
+
+		return thirdColumnX + longestRightKey + Game.SetupMenuMargin;
+	}
+
+	MouseClick(mouseEventArgs)
+	{
+		let anyColorPicking = Utilities.AnyPlayerIsColorPicking();
+		let colorPicker = undefined;
+
+		game.players.forEach(player =>
+		{
+			if (player.EditingColor)
+			{ colorPicker = player; }
+
+			player.EditingName = false;
+			player.EditingLeftKey = false;
+			player.EditingRightKey = false;
+			player.EditingColor = false;
+		});
+
+		this.mousePositionOnCanvas = {x: mouseEventArgs.x - mouseEventArgs.target.offsetLeft, y: mouseEventArgs.y - mouseEventArgs.target.offsetTop};
+
+		for (const renderedObject in this.renderedObjects)
+		{
+			let renderedObjectBox = this.renderedObjects[renderedObject];
+			if (this.mousePositionOnCanvas.x > renderedObjectBox.x && this.mousePositionOnCanvas.x < renderedObjectBox.x + renderedObjectBox.width &&
+				this.mousePositionOnCanvas.y > renderedObjectBox.y - renderedObjectBox.height && this.mousePositionOnCanvas.y < renderedObjectBox.y)
+			{
+				let objectParts = renderedObject.split('_');
+
+				if (anyColorPicking)
+				{
+					if (objectParts[0] === "Color" && colorPicker)
+					{
+						colorPicker.color = objectParts[1];
+						colorPicker.EditingColor = false;
+
+						break;
+					}
+				}
+				else if (objectParts[0] === "Player")
+				{
+					if (objectParts[1] === "Add")
+					{
+						game.AddRandomPlayer();
+					}
+					else if (Utilities.GameHasPlayerWithName(objectParts[1]))
+					{
+						if (objectParts[2] === "Name")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingName = true; }
+						else if (objectParts[2] === "LeftKey")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingLeftKey = true; }
+						else if (objectParts[2] === "RightKey")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingRightKey = true; }
+						else if (objectParts[2] === "Color")
+						{ Utilities.GetPlayerWithName(objectParts[1]).EditingColor = true; }
+						else if (objectParts[2] === "Delete")
+						{ game.players.splice(game.players.indexOf(Utilities.GetPlayerWithName(objectParts[1])), 1); }
+					}
+
+					break;
+				}
+			}
+		}
+	}
+
+	MouseMove(mouseEventArgs)
+	{
+		this.mousePositionOnCanvas = {x: mouseEventArgs.x - mouseEventArgs.target.offsetLeft, y: mouseEventArgs.y - mouseEventArgs.target.offsetTop};
+	}
+
+	KeyDown(keyboardEventArgs)
+	{
+		let allowedNameCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890öäüÖÄÜ-_+-";
+
+		game.players.forEach(player =>
+		{
+			if (player.EditingName)
+			{
+				if (keyboardEventArgs.code === "Enter")
+				{
+					player.EditingName = false;
+
+					if (player.name === "")
+					{
+						player.name = Utilities.GetRandomPlayerName();
+					}
+				}
+				else if (keyboardEventArgs.code === "Backspace")
+				{
+					player.name = player.name.slice(0, -1);
+				}
+				else if (allowedNameCharacters.includes(keyboardEventArgs.key))
+				{
+					player.name += keyboardEventArgs.key;
+				}
+			}
+			if (player.EditingRightKey)
+			{
+				player.RightKey = keyboardEventArgs.key;
+				player.EditingRightKey = false;
+			}
+			if (player.EditingLeftKey)
+			{
+				player.LeftKey = keyboardEventArgs.key;
+				player.EditingLeftKey = false;
+				player.EditingRightKey = true;
+			}
+		});
+	}
+}
+
 class Point
 {
 	constructor(x, y)
@@ -888,11 +1214,86 @@ class Utilities
 		return playerName;
 	}
 
+	static GetRandomPlayerColor()
+	{
+		let color;
+
+		do
+		{
+			// TODO: generate the color in the same mode as the color picking (with 4 steps per primary color each)
+			color = "rgb(" + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + "," + Math.floor(Math.random() * 256) + ")";
+		}
+		while (Utilities.GameHasPlayerWithColor(color));
+
+		return color;
+	}
+
+	static GetRandomPlayerKey()
+	{
+		let key, availableKeys = "abcdefghijklmnopqrstuvwxyz<^1234567890ß´,.-#öäü";
+
+		do
+		{
+			key = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+		}
+		while (Utilities.GameHasPlayerWithKeyBinding(key));
+
+		return key;
+	}
+
 	static GameHasPlayerWithName(playerName)
 	{
 		for (let i = 0; i < game.players.length; i++)
 		{
 			if (game.players[i].name === playerName)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static GameHasPlayerWithColor(color)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].color === color)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static GameHasPlayerWithKeyBinding(key)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].LeftKey === key || game.players[i].RightKey === key)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static GetPlayerWithName(playerName)
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].name === playerName)
+			{
+				return game.players[i];
+			}
+		}
+		return undefined;
+	}
+
+	static AnyPlayerIsColorPicking()
+	{
+		for (let i = 0; i < game.players.length; i++)
+		{
+			if (game.players[i].EditingColor)
 			{
 				return true;
 			}
